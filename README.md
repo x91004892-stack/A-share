@@ -1,17 +1,7 @@
-# A股短线主线选股看板
+# A股短线主线选股看板：动态版
 
-这是一个 Vite + React + Tailwind 的网页看板初版。
+三块内容：当天盘面分析、板块强度分析、个股最新走势分析。
 
-## 本地运行
-
-```bash
-npm install
-npm run dev
-```
-
-## Vercel 部署设置
-
-- Framework Preset: Vite
-- Build Command: npm run build
-- Output Directory: dist
-- Install Command: npm install
+- API 接口：/api/quotes 和 /api/kline
+- 部署设置：Vite / npm run build / dist
+- 预测为规则模型，不构成投资建议。

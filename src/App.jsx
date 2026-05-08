@@ -1,321 +1,58 @@
-import React, { useMemo, useState } from "react";
-import { Search, AlertTriangle, Activity, ShieldCheck, Zap, BarChart3, Filter, Target, RefreshCw } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Activity, AlertTriangle, BarChart3, RefreshCw, Search, TrendingUp, Zap } from "lucide-react";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
-const sectors = [
-  { name: "PCB / CCL / 电子材料", strength: 92, status: "主线延续", note: "AI硬件链扩散，关注非涨停强势补涨", risk: "前排高位分歧" },
-  { name: "人形机器人", strength: 88, status: "新接力", note: "看减速器、轴承、丝杠、电机方向", risk: "前排连板后分化" },
-  { name: "商业航天", strength: 84, status: "题材爆发", note: "适合看低位补涨和换手板", risk: "持续性需确认" },
-  { name: "光通信 / F5G", strength: 81, status: "高位分歧", note: "只看低位承接，不追高位核心", risk: "涨幅较大" },
-  { name: "半导体封测", strength: 76, status: "轮动观察", note: "适合等科技分歧后的资金回流", risk: "弹性弱于前排" },
-  { name: "电池 / 化工", strength: 58, status: "修复观察", note: "不是当前第一主线，只看新材料细分", risk: "资金优先级低" }
+const SECTOR_MAP = [
+  { name: "PCB / CCL / 电子材料", codes: ["603328", "000823", "002134", "600552", "002579", "603002", "301526"], logic: "AI服务器带动高速PCB、覆铜板和上游电子材料需求。" },
+  { name: "人形机器人", codes: ["002031", "603667", "002553", "000680", "301368"], logic: "资金从高位科技向机器人零部件轮动，重点看轴承、减速器、丝杠、电机。" },
+  { name: "商业航天", codes: ["000547", "000901", "300900", "600343", "002389"], logic: "题材弹性强，适合看前排延续和后排换手补涨。" },
+  { name: "光通信 / F5G", codes: ["002429", "603042", "600498", "603118", "600105"], logic: "AI算力硬件链分支，关注光通信、F5G、低价补涨。" },
+  { name: "半导体封测", codes: ["002185", "000021", "600584", "603005", "600171"], logic: "科技分歧后可能回流封测、先进封装、功率芯片。" }
 ];
 
-const candidates = [
-  {
-    code: "603328",
-    name: "依顿电子",
-    sector: "PCB",
-    price: 13.0,
-    limitUp: false,
-    score: 86,
-    momentum: 82,
-    fund: 78,
-    position: 76,
-    risk: 52,
-    style: "低价补涨",
-    trigger: "PCB前排不退潮，低开不破后快速翻红",
-    buy: "回踩12.8—13.0附近承接，放量站回分时均线",
-    avoid: "高开急冲、板块前排炸板、放量冲高回落"
-  },
-  {
-    code: "000823",
-    name: "超声电子",
-    sector: "PCB / 覆铜板",
-    price: 14.8,
-    limitUp: false,
-    score: 84,
-    momentum: 80,
-    fund: 83,
-    position: 72,
-    risk: 55,
-    style: "资金补拉",
-    trigger: "PCB资金继续扩散，早盘主动放量",
-    buy: "4%—7%半路放量突破，分时均线不破",
-    avoid: "板块强它不强，或10点半前仍无主动性"
-  },
-  {
-    code: "002134",
-    name: "天津普林",
-    sector: "PCB",
-    price: 12.5,
-    limitUp: false,
-    score: 82,
-    momentum: 79,
-    fund: 74,
-    position: 78,
-    risk: 58,
-    style: "抓板候选",
-    trigger: "低价PCB补涨，前排继续强时容易点火",
-    buy: "高开3%以内，快速放量突破前高",
-    avoid: "高开过大，或冲板失败快速回落"
-  },
-  {
-    code: "600552",
-    name: "凯盛科技",
-    sector: "电子材料",
-    price: 15.6,
-    limitUp: false,
-    score: 79,
-    momentum: 76,
-    fund: 81,
-    position: 69,
-    risk: 60,
-    style: "材料补涨",
-    trigger: "电子材料扩散，资金继续从PCB上游挖掘",
-    buy: "小幅回踩不破，重新放量站上前一日高点",
-    avoid: "近期涨幅过快后高开低走"
-  },
-  {
-    code: "002579",
-    name: "中京电子",
-    sector: "PCB / 封装载板",
-    price: 10.8,
-    limitUp: false,
-    score: 72,
-    momentum: 69,
-    fund: 58,
-    position: 81,
-    risk: 63,
-    style: "低价观察",
-    trigger: "板块强势时才看是否补拉",
-    buy: "放量转强、突破平台再考虑",
-    avoid: "板块涨它横盘，直接放弃"
-  }
-];
+const DEFAULT_WATCH = ["000338", "000021", "601179", "603328", "000823", "002134", "600552", "301526"];
 
-const holdings = [
-  { name: "潍柴动力", status: "高位分歧", cost: "填写你的成本", current: "33.06", pnl: "自动/手动计算", support: "32.75—32.88", pressure: "33.8—34.5", action: "反抽冲不动可做T/减仓" },
-  { name: "深科技", status: "趋势偏慢", cost: "填写你的成本", current: "31.02", pnl: "自动/手动计算", support: "30.46", pressure: "32.0", action: "板块强仍弱则降级" },
-  { name: "中国西电", status: "震荡修复", cost: "填写你的成本", current: "17.50", pnl: "自动/手动计算", support: "17.0—17.2", pressure: "17.8—18.0", action: "不重仓恋战，看18元突破" }
-];
-
-function ScoreBar({ value, label }) {
-  return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs text-slate-500">
-        <span>{label}</span>
-        <span>{value}</span>
-      </div>
-      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-        <div className="h-full rounded-full bg-slate-900" style={{ width: `${Math.min(value, 100)}%` }} />
-      </div>
-    </div>
-  );
+function fmt(n, digits = 2) { if (n === null || n === undefined || Number.isNaN(Number(n))) return "--"; return Number(n).toFixed(digits); }
+function money(n) { if (!n && n !== 0) return "--"; const v = Number(n); if (Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(2)}亿`; if (Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(2)}万`; return String(v); }
+function Badge({ children, tone = "slate" }) { const tones = { slate: "bg-slate-100 text-slate-700", green: "bg-emerald-100 text-emerald-700", amber: "bg-amber-100 text-amber-700", red: "bg-rose-100 text-rose-700", blue: "bg-blue-100 text-blue-700" }; return <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${tones[tone]}`}>{children}</span>; }
+function ScoreBar({ label, value }) { const tone = value >= 80 ? "bg-emerald-600" : value >= 65 ? "bg-blue-600" : value >= 50 ? "bg-amber-500" : "bg-rose-500"; return <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500"><span>{label}</span><span>{Math.round(value)}</span></div><div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className={`h-full ${tone}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div></div>; }
+async function fetchQuotes(codes) { const r = await fetch(`/api/quotes?codes=${encodeURIComponent(codes.join(","))}`); const j = await r.json(); return j.data || []; }
+async function fetchKline(code) { const r = await fetch(`/api/kline?code=${encodeURIComponent(code)}&days=90`); const j = await r.json(); return j.data || []; }
+function ma(arr, n, key = "close") { if (!arr.length || arr.length < n) return null; return arr.slice(-n).reduce((a, b) => a + Number(b[key] || 0), 0) / n; }
+function analyzeStock(q, kline) {
+  if (!q) return null;
+  const close = q.price || kline.at(-1)?.close;
+  const ma5 = ma(kline, 5), ma10 = ma(kline, 10), ma20 = ma(kline, 20);
+  const recentHigh = Math.max(...kline.slice(-20).map(x => x.high || 0));
+  const recentLow = Math.min(...kline.slice(-20).map(x => x.low || 999999));
+  const pct = q.pct || 0;
+  let score = 50;
+  if (pct > 0) score += 8; if (pct > 3) score += 10; if (q.turnover > 5) score += 8; if (q.turnover > 10) score += 8; if (q.amount > 5e8) score += 8;
+  if (ma5 && ma10 && close > ma5 && ma5 > ma10) score += 14; if (ma20 && close > ma20) score += 8; if (recentHigh && close > recentHigh * 0.97) score += 8;
+  if (pct < -3) score -= 15; if (ma5 && close < ma5) score -= 8; score = Math.max(0, Math.min(100, score));
+  let status = "震荡观察", tone = "slate";
+  if (score >= 82) { status = "强势快拉候选"; tone = "green"; } else if (score >= 70) { status = "资金关注"; tone = "blue"; } else if (score >= 55) { status = "一般观察"; tone = "amber"; } else { status = "偏弱回避"; tone = "red"; }
+  const plan = [score >= 70 ? "如果板块前排不退潮，低开不破后快速翻红，可看盘中确认。" : "暂不主动买，只有放量转强才重新观察。", recentLow < 999999 ? `短线防守参考：${fmt(recentLow)} 附近。` : "", recentHigh > 0 ? `压力参考：${fmt(recentHigh)} 附近，冲不过容易回落。` : "", "高开急冲、放量冲高回落、板块强它弱，都直接放弃。"].filter(Boolean).join(" ");
+  return { score, status, tone, ma5, ma10, ma20, recentHigh, recentLow, plan };
 }
-
-function Badge({ children, tone = "slate" }) {
-  const tones = {
-    slate: "bg-slate-100 text-slate-700",
-    green: "bg-emerald-100 text-emerald-700",
-    amber: "bg-amber-100 text-amber-700",
-    red: "bg-rose-100 text-rose-700",
-    blue: "bg-blue-100 text-blue-700"
-  };
-  return <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${tones[tone]}`}>{children}</span>;
-}
+function sectorScore(quotes) { if (!quotes.length) return { score: 0, avgPct: 0, upRatio: 0, limitCount: 0, amount: 0 }; const avgPct = quotes.reduce((s, q) => s + Number(q.pct || 0), 0) / quotes.length; const upRatio = quotes.filter(q => Number(q.pct || 0) > 0).length / quotes.length; const limitCount = quotes.filter(q => Number(q.pct || 0) >= 9.5).length; const amount = quotes.reduce((s, q) => s + Number(q.amount || 0), 0); let score = 50 + avgPct * 8 + upRatio * 20 + limitCount * 7; if (amount > 5e9) score += 5; return { score: Math.max(0, Math.min(100, score)), avgPct, upRatio, limitCount, amount }; }
+function marketComment(indexQuotes, sectorRows) { const sh = indexQuotes.find(q => q.code === "000001"), sz = indexQuotes.find(q => q.code === "399001"), cyb = indexQuotes.find(q => q.code === "399006"); const top = [...sectorRows].sort((a, b) => b.score - a.score)[0]; const weakIndex = [sh, sz, cyb].filter(q => Number(q?.pct || 0) < 0).length; const strongIndex = [sh, sz, cyb].filter(q => Number(q?.pct || 0) > 0.8).length; if (!top) return "等待数据加载。"; if (weakIndex >= 2 && top.score >= 75) return `指数偏分化，但${top.name}仍有较强资金承接，短线更适合做强板块内部轮动，不适合追高位一致票。`; if (strongIndex >= 2) return `指数和情绪共振偏强，${top.name}等主线仍有进攻基础，但连续上涨后要防早盘高开兑现。`; return `市场大概率处于震荡轮动状态，优先看${top.name}等强板块的分歧承接，避免弱票低位幻想补涨。`; }
 
 export default function App() {
-  const [query, setQuery] = useState("");
-  const [maxPrice, setMaxPrice] = useState(25);
-  const [minScore, setMinScore] = useState(75);
-  const [hideLimitUp, setHideLimitUp] = useState(true);
+  const [indexQuotes, setIndexQuotes] = useState([]), [sectorQuotes, setSectorQuotes] = useState({}), [watchQuotes, setWatchQuotes] = useState([]);
+  const [selected, setSelected] = useState("000338"), [manualCode, setManualCode] = useState("000338"), [selectedQuote, setSelectedQuote] = useState(null), [kline, setKline] = useState([]), [loading, setLoading] = useState(false), [lastUpdate, setLastUpdate] = useState("");
+  async function refreshAll() { setLoading(true); try { const idx = await fetchQuotes(["sh000001", "sz399001", "sz399006"]); setIndexQuotes(idx); const sectorData = {}; for (const s of SECTOR_MAP) sectorData[s.name] = await fetchQuotes(s.codes); setSectorQuotes(sectorData); setWatchQuotes(await fetchQuotes(DEFAULT_WATCH)); setLastUpdate(new Date().toLocaleString()); } finally { setLoading(false); } }
+  async function refreshStock(code) { setLoading(true); try { const q = await fetchQuotes([code]); setSelectedQuote(q[0] || null); setKline(await fetchKline(code)); setSelected(code); } finally { setLoading(false); } }
+  useEffect(() => { refreshAll(); refreshStock(selected); }, []);
+  const sectorRows = useMemo(() => SECTOR_MAP.map(s => ({ ...s, ...sectorScore(sectorQuotes[s.name] || []), quotes: sectorQuotes[s.name] || [] })).sort((a, b) => b.score - a.score), [sectorQuotes]);
+  const stockAnalysis = useMemo(() => analyzeStock(selectedQuote, kline), [selectedQuote, kline]);
+  const watchRows = useMemo(() => watchQuotes.map(q => ({ ...q, simpleScore: Math.max(0, Math.min(100, 50 + Math.max(-10, Math.min(10, Number(q.pct || 0))) * 3 + (Number(q.turnover || 0) > 5 ? 8 : 0) + (Number(q.amount || 0) > 5e8 ? 8 : 0))) })).sort((a, b) => b.simpleScore - a.simpleScore), [watchQuotes]);
 
-  const filtered = useMemo(() => {
-    return candidates.filter((item) => {
-      const matchQuery = `${item.name}${item.code}${item.sector}`.includes(query.trim());
-      const matchPrice = item.price <= maxPrice;
-      const matchScore = item.score >= minScore;
-      const matchLimit = hideLimitUp ? !item.limitUp : true;
-      return matchQuery && matchPrice && matchScore && matchLimit;
-    });
-  }, [query, maxPrice, minScore, hideLimitUp]);
-
-  const topSector = sectors[0];
-
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 p-5 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
-              <Activity size={16} /> A股短线主线选股看板 · 初版模板
-            </div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">主线强度、快拉候选与持仓风控</h1>
-            <p className="mt-2 text-slate-600 max-w-3xl">用于盘后复盘和次日计划：先判断板块，再筛非涨停强势票，最后给出买点、放弃条件和持仓处理。</p>
-          </div>
-          <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-4 min-w-[240px]">
-            <div className="text-xs text-slate-500">当前优先主线</div>
-            <div className="mt-1 text-xl font-bold">{topSector.name}</div>
-            <div className="mt-2 flex items-center gap-2">
-              <Badge tone="green">强度 {topSector.strength}</Badge>
-              <Badge tone="blue">{topSector.status}</Badge>
-            </div>
-          </div>
-        </header>
-
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-            <div className="flex items-center gap-2 text-slate-500 text-sm"><Zap size={16} /> 快拉筛选原则</div>
-            <h2 className="mt-2 text-xl font-bold">强板块里的非涨停强票</h2>
-            <p className="mt-2 text-sm text-slate-600">不买弱票幻想补涨；不盲追连续涨停；重点看资金开始进攻、价格不高、回踩承接强的票。</p>
-          </div>
-          <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-            <div className="flex items-center gap-2 text-slate-500 text-sm"><Target size={16} /> 买点原则</div>
-            <h2 className="mt-2 text-xl font-bold">分歧后确认，不开盘盲冲</h2>
-            <p className="mt-2 text-sm text-slate-600">优先等低开不破、快速翻红、站回分时均线，或4%—7%半路放量突破。</p>
-          </div>
-          <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-            <div className="flex items-center gap-2 text-slate-500 text-sm"><ShieldCheck size={16} /> 风控原则</div>
-            <h2 className="mt-2 text-xl font-bold">错了快走，涨停票更谨慎</h2>
-            <p className="mt-2 text-sm text-slate-600">板块前排炸板、个股放量冲高回落、板块强它弱，全部视为放弃信号。</p>
-          </div>
-        </section>
-
-        <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <div className="flex items-center gap-2 text-slate-500 text-sm"><BarChart3 size={16} /> 板块强度</div>
-              <h2 className="text-2xl font-bold mt-1">先选板块，再选个股</h2>
-            </div>
-            <Badge tone="amber">盘后手动更新数据</Badge>
-          </div>
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {sectors.map((s) => (
-              <div key={s.name} className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-bold text-lg">{s.name}</h3>
-                    <p className="text-sm text-slate-600 mt-1">{s.note}</p>
-                  </div>
-                  <Badge tone={s.strength >= 85 ? "green" : s.strength >= 75 ? "blue" : "slate"}>{s.status}</Badge>
-                </div>
-                <div className="mt-4"><ScoreBar label="板块强度" value={s.strength} /></div>
-                <div className="mt-3 flex items-center gap-2 text-xs text-rose-600"><AlertTriangle size={14} /> 风险：{s.risk}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-slate-500 text-sm"><Filter size={16} /> 快拉候选池</div>
-              <h2 className="text-2xl font-bold mt-1">非涨停强势票筛选</h2>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 w-full lg:w-auto">
-              <div className="relative sm:col-span-2">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300" placeholder="搜索名称/代码/板块" value={query} onChange={(e) => setQuery(e.target.value)} />
-              </div>
-              <label className="flex items-center gap-2 text-sm bg-slate-50 rounded-xl border border-slate-200 px-3 py-2">
-                股价≤
-                <input type="number" className="w-16 bg-transparent outline-none font-semibold" value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} />
-              </label>
-              <label className="flex items-center gap-2 text-sm bg-slate-50 rounded-xl border border-slate-200 px-3 py-2">
-                评分≥
-                <input type="number" className="w-14 bg-transparent outline-none font-semibold" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />
-              </label>
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-sm">
-            <input id="hideLimit" type="checkbox" checked={hideLimitUp} onChange={(e) => setHideLimitUp(e.target.checked)} />
-            <label htmlFor="hideLimit" className="text-slate-600">隐藏已涨停票</label>
-          </div>
-
-          <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {filtered.map((item) => (
-              <article key={item.code} className="rounded-2xl border border-slate-200 p-4 bg-white hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-xl font-bold">{item.name}</h3>
-                      <span className="text-sm text-slate-400">{item.code}</span>
-                      <Badge tone="blue">{item.sector}</Badge>
-                      <Badge tone={item.score >= 84 ? "green" : "amber"}>{item.style}</Badge>
-                    </div>
-                    <div className="mt-2 text-sm text-slate-600">现价参考：{item.price} 元 · 综合评分 {item.score}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-3xl font-bold">{item.score}</div>
-                    <div className="text-xs text-slate-500">快拉评分</div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <ScoreBar label="动量" value={item.momentum} />
-                  <ScoreBar label="资金" value={item.fund} />
-                  <ScoreBar label="位置" value={item.position} />
-                  <ScoreBar label="安全边际" value={100 - item.risk} />
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                  <div className="rounded-xl bg-slate-50 p-3">
-                    <div className="font-semibold text-slate-900">触发条件</div>
-                    <p className="mt-1 text-slate-600">{item.trigger}</p>
-                  </div>
-                  <div className="rounded-xl bg-emerald-50 p-3">
-                    <div className="font-semibold text-emerald-900">可看买点</div>
-                    <p className="mt-1 text-emerald-700">{item.buy}</p>
-                  </div>
-                  <div className="rounded-xl bg-rose-50 p-3">
-                    <div className="font-semibold text-rose-900">放弃条件</div>
-                    <p className="mt-1 text-rose-700">{item.avoid}</p>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-          <div className="flex items-center gap-2 text-slate-500 text-sm"><RefreshCw size={16} /> 持仓监控</div>
-          <h2 className="text-2xl font-bold mt-1">不是所有持仓都适合继续恋战</h2>
-          <div className="mt-5 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b">
-                  <th className="py-3 pr-4">股票</th>
-                  <th className="py-3 pr-4">状态</th>
-                  <th className="py-3 pr-4">成本</th>
-                  <th className="py-3 pr-4">当前价</th>
-                  <th className="py-3 pr-4">盈亏</th>
-                  <th className="py-3 pr-4">支撑位</th>
-                  <th className="py-3 pr-4">压力位</th>
-                  <th className="py-3 pr-4">处理建议</th>
-                </tr>
-              </thead>
-              <tbody>
-                {holdings.map((h) => (
-                  <tr key={h.name} className="border-b last:border-0">
-                    <td className="py-3 pr-4 font-semibold">{h.name}</td>
-                    <td className="py-3 pr-4"><Badge tone={h.status.includes("分歧") ? "amber" : "slate"}>{h.status}</Badge></td>
-                    <td className="py-3 pr-4">{h.cost}</td>
-                    <td className="py-3 pr-4">{h.current}</td>
-                    <td className="py-3 pr-4">{h.pnl}</td>
-                    <td className="py-3 pr-4">{h.support}</td>
-                    <td className="py-3 pr-4">{h.pressure}</td>
-                    <td className="py-3 pr-4 text-slate-600">{h.action}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <footer className="text-xs text-slate-500 leading-relaxed">
-          提醒：此看板用于训练复盘和交易计划，不构成投资建议。实际交易前需要结合实时盘口、竞价、成交量、板块前排状态和个人风险承受能力。
-        </footer>
-      </div>
-    </div>
-  );
+  return <div className="min-h-screen bg-slate-50 p-5 md:p-8 text-slate-900"><div className="max-w-7xl mx-auto space-y-6">
+    <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4"><div><div className="flex items-center gap-2 text-sm text-slate-500"><Activity size={16} /> A股短线主线看板 · 动态版</div><h1 className="mt-2 text-3xl md:text-4xl font-bold">盘面分析、板块强度与个股走势预测</h1><p className="mt-2 text-slate-600">自动抓取指数、板块代表股和个股K线，生成规则化短线判断。预测仅用于交易计划，不保证涨跌。</p></div><button onClick={() => { refreshAll(); refreshStock(selected); }} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 text-white px-5 py-3 shadow-sm hover:bg-slate-700"><RefreshCw size={18} className={loading ? "animate-spin" : ""} /> 刷新数据</button></header>
+    <section className="grid grid-cols-1 lg:grid-cols-3 gap-4"><div className="lg:col-span-2 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm"><div className="flex items-center gap-2 text-slate-500 text-sm"><BarChart3 size={16} /> 第一块：当天盘面情况</div><h2 className="mt-1 text-2xl font-bold">指数与市场风格判断</h2><div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">{indexQuotes.map(q => <div key={q.code} className="rounded-2xl bg-slate-50 border border-slate-200 p-4"><div className="text-sm text-slate-500">{q.name}</div><div className="mt-1 text-2xl font-bold">{fmt(q.price)}</div><div className={`mt-1 text-sm font-semibold ${Number(q.pct) >= 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmt(q.change)} / {fmt(q.pct)}%</div></div>)}</div><div className="mt-4 rounded-2xl bg-slate-50 border border-slate-200 p-4"><div className="font-semibold">盘面解读</div><p className="mt-2 text-slate-700 leading-relaxed">{marketComment(indexQuotes, sectorRows)}</p></div></div><div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm"><div className="flex items-center gap-2 text-slate-500 text-sm"><Zap size={16} /> 今日主线</div><h2 className="mt-1 text-2xl font-bold">{sectorRows[0]?.name || "--"}</h2><div className="mt-3"><Badge tone="green">强度 {Math.round(sectorRows[0]?.score || 0)}</Badge></div><p className="mt-4 text-slate-600 leading-relaxed">{sectorRows[0]?.logic}</p><p className="mt-4 text-sm text-slate-500">最后更新：{lastUpdate || "--"}</p></div></section>
+    <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm"><div className="flex items-center gap-2 text-slate-500 text-sm"><TrendingUp size={16} /> 第二块：板块强度与后续走势推演</div><h2 className="mt-1 text-2xl font-bold">板块不是看概念，而是看代表股强度</h2><div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{sectorRows.map(s => <div key={s.name} className="rounded-2xl bg-slate-50 border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><h3 className="font-bold text-lg">{s.name}</h3><Badge tone={s.score >= 80 ? "green" : s.score >= 65 ? "blue" : "amber"}>{Math.round(s.score)}</Badge></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><span className="text-slate-500">平均涨幅：</span><b>{fmt(s.avgPct)}%</b></div><div><span className="text-slate-500">上涨占比：</span><b>{fmt(s.upRatio * 100, 0)}%</b></div><div><span className="text-slate-500">涨停数：</span><b>{s.limitCount}</b></div><div><span className="text-slate-500">成交额：</span><b>{money(s.amount)}</b></div></div><div className="mt-4"><ScoreBar label="板块强度" value={s.score} /></div><p className="mt-3 text-sm text-slate-600">{s.logic}</p><p className="mt-3 text-sm text-slate-700">{s.score >= 80 ? "预测：短线仍有延续，但周一要防高开分歧，优先看分歧后承接。" : s.score >= 65 ? "预测：有轮动机会，必须看前排是否继续强。" : "预测：暂时不是第一主线，只适合观察修复。"}</p></div>)}</div></section>
+    <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm"><div className="flex items-center gap-2 text-slate-500 text-sm"><Search size={16} /> 第三块：个股最新情况与走势分析</div><div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4"><div><h2 className="mt-1 text-2xl font-bold">输入股票代码，自动抓取最新报价和K线</h2><p className="mt-2 text-slate-600">支持 A 股代码，例如 000338、000021、601179、603328。</p></div><div className="flex gap-2"><input value={manualCode} onChange={e => setManualCode(e.target.value)} className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-slate-300" placeholder="输入代码" /><button onClick={() => refreshStock(manualCode)} className="rounded-xl bg-slate-900 text-white px-5 py-3">分析</button></div></div><div className="mt-5 grid grid-cols-1 xl:grid-cols-3 gap-4"><div className="xl:col-span-2 rounded-2xl bg-slate-50 border border-slate-200 p-4 min-h-[320px]"><div className="flex items-center justify-between"><div><h3 className="text-xl font-bold">{selectedQuote?.name || selected} <span className="text-slate-400 text-sm">{selectedQuote?.code}</span></h3><div className={`mt-1 font-semibold ${Number(selectedQuote?.pct || 0) >= 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmt(selectedQuote?.price)} · {fmt(selectedQuote?.pct)}%</div></div>{stockAnalysis && <Badge tone={stockAnalysis.tone}>{stockAnalysis.status}</Badge>}</div><div className="h-64 mt-5"><ResponsiveContainer width="100%" height="100%"><LineChart data={kline}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" hide /><YAxis domain={["dataMin", "dataMax"]} width={50} /><Tooltip /><Line type="monotone" dataKey="close" dot={false} strokeWidth={2} /></LineChart></ResponsiveContainer></div></div><div className="rounded-2xl bg-slate-50 border border-slate-200 p-4"><h3 className="font-bold text-lg">短线判断</h3>{stockAnalysis ? <><div className="mt-3"><ScoreBar label="个股快拉评分" value={stockAnalysis.score} /></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><span className="text-slate-500">MA5：</span><b>{fmt(stockAnalysis.ma5)}</b></div><div><span className="text-slate-500">MA10：</span><b>{fmt(stockAnalysis.ma10)}</b></div><div><span className="text-slate-500">支撑：</span><b>{fmt(stockAnalysis.recentLow)}</b></div><div><span className="text-slate-500">压力：</span><b>{fmt(stockAnalysis.recentHigh)}</b></div><div><span className="text-slate-500">换手：</span><b>{fmt(selectedQuote?.turnover)}%</b></div><div><span className="text-slate-500">成交：</span><b>{money(selectedQuote?.amount)}</b></div></div><div className="mt-4 rounded-xl bg-white border border-slate-200 p-3 text-sm leading-relaxed">{stockAnalysis.plan}</div></> : <p className="text-slate-500 mt-3">等待数据。</p>}</div></div><div className="mt-5"><h3 className="font-bold text-lg">观察池强度排序</h3><div className="mt-3 overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500 border-b"><th className="py-3 pr-4">股票</th><th className="py-3 pr-4">现价</th><th className="py-3 pr-4">涨跌幅</th><th className="py-3 pr-4">换手</th><th className="py-3 pr-4">成交额</th><th className="py-3 pr-4">快拉评分</th><th className="py-3 pr-4">操作</th></tr></thead><tbody>{watchRows.map(q => <tr key={q.code} className="border-b last:border-0"><td className="py-3 pr-4 font-semibold">{q.name} <span className="text-slate-400">{q.code}</span></td><td className="py-3 pr-4">{fmt(q.price)}</td><td className={`py-3 pr-4 font-semibold ${Number(q.pct) >= 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmt(q.pct)}%</td><td className="py-3 pr-4">{fmt(q.turnover)}%</td><td className="py-3 pr-4">{money(q.amount)}</td><td className="py-3 pr-4">{Math.round(q.simpleScore)}</td><td className="py-3 pr-4"><button onClick={() => { setManualCode(q.code); refreshStock(q.code); }} className="text-blue-600 font-medium">分析</button></td></tr>)}</tbody></table></div></div></section>
+    <section className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 flex gap-2"><AlertTriangle size={18} className="shrink-0 mt-0.5" /><p>说明：网页里的“预测”是根据价格、涨跌幅、换手、成交额、均线和板块代表股强度生成的规则判断，不等于确定性结论。抓涨停要看盘中竞价、板块前排、分时承接和封单质量。</p></section>
+  </div></div>;
 }
