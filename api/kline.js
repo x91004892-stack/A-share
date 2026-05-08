@@ -9,10 +9,7 @@ function toSecid(codeRaw) {
   if (code.startsWith('6') || code.startsWith('9')) return `1.${code}`;
   return `0.${code}`;
 }
-function n(v) {
-  const x = Number(v);
-  return Number.isFinite(x) ? x : null;
-}
+function n(v) { const x = Number(v); return Number.isFinite(x) ? x : null; }
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const code = req.query.code || '000338';

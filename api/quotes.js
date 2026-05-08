@@ -21,10 +21,7 @@ module.exports = async function handler(req, res) {
   const codesParam = req.query.codes || 'sh000001,sz399001,sz399006';
   const codes = String(codesParam).split(',').map(s => s.trim()).filter(Boolean);
   const secids = codes.map(toSecid).filter(Boolean).join(',');
-  const fields = [
-    'f12','f13','f14','f2','f3','f4','f5','f6','f7','f8','f9','f10',
-    'f15','f16','f17','f18','f20','f21','f23','f24','f25','f62'
-  ].join(',');
+  const fields = ['f12','f13','f14','f2','f3','f4','f5','f6','f7','f8','f9','f10','f15','f16','f17','f18','f20','f21','f23','f24','f25','f62'].join(',');
   const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=${fields}&secids=${encodeURIComponent(secids)}`;
   try {
     const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://finance.eastmoney.com/' } });
