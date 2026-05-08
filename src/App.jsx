@@ -67,11 +67,38 @@ function supportResistance(k, q){
   const pressure2=above.find(x=>x>close*1.05) || Math.max(...highs10) || null;
   return {close, ma5, ma10, ma20, immediate, defensive, trend, pressure1, pressure2, last, prev};
 }
+
+function isLimitUp(q){
+  const code = String(q?.code || "");
+  const name = String(q?.name || "");
+  const pct = Number(q?.pct || 0);
+  if (name.includes("ST")) return pct >= 4.8;
+  if (code.startsWith("300") || code.startsWith("301") || code.startsWith("688") || code.startsWith("689")) return pct >= 19.3;
+  return pct >= 9.5;
+}
+function isNearLimitUp(q){
+  const code = String(q?.code || "");
+  const name = String(q?.name || "");
+  const pct = Number(q?.pct || 0);
+  if (name.includes("ST")) return pct >= 4.2;
+  if (code.startsWith("300") || code.startsWith("301") || code.startsWith("688") || code.startsWith("689")) return pct >= 15;
+  return pct >= 7;
+}
+function topSectorsText(rows){
+  if (!rows || !rows.length) return "等待数据。";
+  const top = rows[0];
+  const second = rows[1];
+  if (second && Math.abs(top.score - second.score) < 6) {
+    return `样本显示 ${top.name} 与 ${second.name} 强度接近，当前更像多主线轮动，不宜把单一方向当作绝对主线。`;
+  }
+  return `样本显示 ${top.name} 暂时领先，但这只是代表股池强度，不等于全市场全量概念排名。`;
+}
+
 function sectorStats(quotes){
   if(!quotes.length)return {score:0,avgPct:0,upRatio:0,limitCount:0,amount:0,strongCount:0,weakCount:0};
   const avgPct=quotes.reduce((s,q)=>s+Number(q.pct||0),0)/quotes.length;
   const upRatio=quotes.filter(q=>Number(q.pct||0)>0).length/quotes.length;
-  const limitCount=quotes.filter(q=>Number(q.pct||0)>=9.5).length;
+  const limitCount=quotes.filter(q=>isLimitUp(q)).length;
   const strongCount=quotes.filter(q=>Number(q.pct||0)>=5).length;
   const weakCount=quotes.filter(q=>Number(q.pct||0)<=-3).length;
   const amount=quotes.reduce((s,q)=>s+Number(q.amount||0),0);
@@ -85,7 +112,7 @@ function marketPhase(indexes, sectors){
   const top=sectors[0];
   if(!top)return {phase:"等待数据", tone:"slate", text:"等待行情数据加载。"};
   if(neg>=2 && top.score>=78) return {phase:"指数分歧、题材活跃", tone:"amber", text:`指数偏弱但${top.name}仍强，说明资金没有离场，而是在主线内部做高低切。短线重点看强板块分歧后的承接。`};
-  if(pos>=2 && top.score>=78) return {phase:"指数与题材共振", tone:"green", text:`指数和题材同时偏强，${top.name}是当前最强方向。但连续走强后，次日不宜高开追，适合等第一次分歧。`};
+  if(pos>=2 && top.score>=78) return {phase:"指数与题材共振", tone:"green", text:`指数和题材同时偏强，${top.name}是样本最强方向。但连续走强后，次日不宜高开追，适合等第一次分歧。`};
   if(top.score<60) return {phase:"主线不清", tone:"red", text:"板块强度不足，短线不适合重仓出击，先观察资金是否重新聚焦。"};
   return {phase:"震荡轮动", tone:"blue", text:`市场处于轮动状态，优先做${top.name}、${sectors[1]?.name||""}等强板块里的非涨停强势票，避开弱票低位幻想。`};
 }
@@ -97,7 +124,7 @@ function stockScore(q,k){
   const vma5=ma(k,5,"volume");
   const volRatio=vma5?Number(k.at(-1)?.volume||0)/vma5:null;
   let score=45;
-  if(Number(q.pct)>0)score+=8; if(Number(q.pct)>3)score+=10; if(Number(q.pct)>7)score+=6;
+  if(Number(q.pct)>0)score+=8; if(Number(q.pct)>3)score+=10; if(Number(q.pct)>7 && !isLimitUp(q))score+=6;
   if(Number(q.turnover)>3)score+=5; if(Number(q.turnover)>6)score+=6; if(Number(q.turnover)>12)score-=3;
   if(Number(q.amount)>3e8)score+=6; if(Number(q.amount)>8e8)score+=5;
   if(ma5&&ma10&&close>ma5&&ma5>ma10)score+=14; else if(ma5&&close>ma5)score+=6;
@@ -127,7 +154,7 @@ function recommendScore(q, sectorScoreMap){
   sc += turn >= 3 && turn <= 12 ? 15 : turn > 12 ? 8 : 5;
   sc += amount > 8e8 ? 12 : amount > 3e8 ? 9 : amount > 1e8 ? 5 : 0;
   sc += price > 0 && price <= 25 ? 12 : price <= 40 ? 5 : -6;
-  if (pct >= 9.3) sc -= 20;          // 避免已涨停直接追
+  if (isLimitUp(q)) sc -= 24;          // 避免已涨停直接追
   if (pct < -3) sc -= 18;            // 回避弱票
   if (turn > 20) sc -= 8;            // 高换手过热
   return { score: Math.max(0, Math.min(100, sc)), sector: sector?.name || "未分类" };
@@ -154,9 +181,41 @@ export default function App(){
   const [k,setK]=useState([]);
   const [loading,setLoading]=useState(false);
   const [updated,setUpdated]=useState("");
+  const [boardType,setBoardType]=useState("concept");
+  const [boards,setBoards]=useState([]);
+  const [selectedBoard,setSelectedBoard]=useState(null);
+  const [boardStocks,setBoardStocks]=useState([]);
+  const [boardKeyword,setBoardKeyword]=useState("");
 
   async function getQuotes(codes){ const r=await fetch(`/api/quotes?codes=${encodeURIComponent(codes.join(","))}`); const j=await r.json(); return j.data||[]; }
   async function getKline(code){ const r=await fetch(`/api/kline?code=${encodeURIComponent(code)}&days=120`); const j=await r.json(); return j.data||[]; }
+  async function getBoards(type=boardType){
+    const r=await fetch(`/api/boards?type=${encodeURIComponent(type)}&pz=500`);
+    const j=await r.json();
+    return j.data||[];
+  }
+  async function getBoardStocks(boardCode){
+    const r=await fetch(`/api/boardStocks?board=${encodeURIComponent(boardCode)}&pz=1200`);
+    const j=await r.json();
+    return j.data||[];
+  }
+  async function loadBoard(type=boardType){
+    setLoading(true);
+    try{
+      const list=await getBoards(type);
+      setBoards(list);
+      if(list[0]){
+        setSelectedBoard(list[0]);
+        setBoardStocks(await getBoardStocks(list[0].code));
+      }
+    }finally{setLoading(false)}
+  }
+  async function selectBoard(b){
+    setSelectedBoard(b);
+    setLoading(true);
+    try{ setBoardStocks(await getBoardStocks(b.code)); }
+    finally{ setLoading(false); }
+  }
   async function refreshAll(){
     setLoading(true);
     try{
@@ -166,6 +225,9 @@ export default function App(){
       setSectorQuotes(data);
       setWatchQuotes(await getQuotes(DEFAULT_WATCH));
       setRecommendQuotes(await getQuotes(RECOMMEND_POOL));
+      const boardList=await getBoards(boardType);
+      setBoards(boardList);
+      if(boardList[0]){ setSelectedBoard(boardList[0]); setBoardStocks(await getBoardStocks(boardList[0].code)); }
       setUpdated(new Date().toLocaleString());
     }finally{setLoading(false)}
   }
@@ -177,9 +239,25 @@ export default function App(){
     }finally{setLoading(false)}
   }
   useEffect(()=>{refreshAll(); analyze("000338")},[]);
+  useEffect(()=>{ loadBoard(boardType); },[boardType]);
 
   const sectorRows=useMemo(()=>SECTORS.map(s=>({...s,...sectorStats(sectorQuotes[s.name]||[]),quotes:sectorQuotes[s.name]||[]})).sort((a,b)=>b.score-a.score),[sectorQuotes]);
   const sectorScoreMap=useMemo(()=>Object.fromEntries(sectorRows.map(s=>[s.name,s.score])),[sectorRows]);
+  const filteredBoards=useMemo(()=>boards.filter(b=>`${b.name}${b.code}`.includes(boardKeyword.trim())).slice(0,30),[boards,boardKeyword]);
+  const boardStats=useMemo(()=>sectorStats(boardStocks),[boardStocks]);
+  const boardTopStocks=useMemo(()=>[...boardStocks].sort((a,b)=>Number(b.pct||0)-Number(a.pct||0)).slice(0,12),[boardStocks]);
+  const boardRecommend=useMemo(()=>[...boardStocks].map(x=>{
+    const price=Number(x.price||0), pct=Number(x.pct||0), turn=Number(x.turnover||0), amount=Number(x.amount||0);
+    let sc=45;
+    if(pct>0&&pct<9.5) sc+=15;
+    if(pct>=3&&pct<9.5) sc+=10;
+    if(turn>=3&&turn<=12) sc+=15; else if(turn>12&&turn<=20) sc+=8;
+    if(amount>3e8) sc+=10; if(amount>8e8) sc+=6;
+    if(price>0&&price<=25) sc+=12; else if(price<=45) sc+=5;
+    if(isLimitUp(x)) sc-=22;
+    if(pct<0) sc-=8;
+    return {...x, boardRecScore:Math.max(0,Math.min(100,sc))};
+  }).filter(x=>x.boardRecScore>=62).sort((a,b)=>b.boardRecScore-a.boardRecScore).slice(0,10),[boardStocks]);
   const phase=useMemo(()=>marketPhase(indexQuotes,sectorRows),[indexQuotes,sectorRows]);
   const analysis=useMemo(()=>stockScore(q,k),[q,k]);
   const recommendations=useMemo(()=>recommendQuotes.map(x=>{
@@ -220,19 +298,106 @@ export default function App(){
             <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
               <div className="font-bold">盘面解读</div>
               <p className="mt-2 leading-relaxed text-slate-700">{phase.text}</p>
+              <p className="mt-2 text-xs text-slate-500">说明：本页板块统计基于预设代表股池，不是全市场完整行业/概念成分统计；“样本涨停数”已经按10cm、20cm、ST不同涨停幅度近似识别。</p>
             </div>
             <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
               <div className="font-bold">下个交易日推演</div>
               <p className="mt-2 leading-relaxed text-slate-700">成交额维持高位时，主线仍有轮动基础；高位前排若集体高开低走，要降低仓位。优先做强板块里主动放量的票，不做板块强它弱的票。</p>
+              <p className="mt-3 text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-xl p-3">{topSectorsText(sectorRows)}</p>
             </div>
           </div>
         </div>
         <div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
-          <div className="flex items-center gap-2 text-slate-500 text-sm"><Star size={16}/> 当前最强主线</div>
+          <div className="flex items-center gap-2 text-slate-500 text-sm"><Star size={16}/> 样本最强方向</div>
           <h2 className="mt-1 text-2xl font-bold">{sectorRows[0]?.name||"--"}</h2>
-          <div className="mt-3"><ScoreBar label="主线强度" value={sectorRows[0]?.score||0}/></div>
+          <div className="mt-3"><ScoreBar label="样本强度" value={sectorRows[0]?.score||0}/></div>
           <p className="mt-4 text-slate-700 leading-relaxed">{sectorRows[0]?.logic}</p>
           <div className="mt-4 text-xs text-slate-500">更新：{updated||"--"}</div>
+        </div>
+      </section>
+
+
+      <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-slate-500 text-sm"><BarChart3 size={16}/> 完整板块数据：概念/行业全量成分</div>
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+          <div>
+            <h2 className="mt-1 text-2xl font-bold">不再只看代表股池，直接读取板块成分</h2>
+            <p className="mt-2 text-slate-600">这里抓取东方财富概念/行业板块列表，再读取所选板块全部成分股，计算真实样本涨停数、上涨占比、强势股和候选股。</p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={()=>setBoardType("concept")} className={`rounded-xl px-4 py-2 ${boardType==="concept"?"bg-slate-900 text-white":"bg-slate-100 text-slate-700"}`}>概念板块</button>
+            <button onClick={()=>setBoardType("industry")} className={`rounded-xl px-4 py-2 ${boardType==="industry"?"bg-slate-900 text-white":"bg-slate-100 text-slate-700"}`}>行业板块</button>
+            <input value={boardKeyword} onChange={e=>setBoardKeyword(e.target.value)} placeholder="搜索板块" className="rounded-xl border border-slate-200 px-4 py-2 outline-none focus:ring-2 focus:ring-slate-300" />
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div className="xl:col-span-1 rounded-2xl bg-slate-50 border border-slate-200 p-4 max-h-[520px] overflow-auto">
+            <h3 className="font-bold mb-3">板块涨幅榜</h3>
+            <div className="space-y-2">
+              {filteredBoards.map(b=><button key={b.code} onClick={()=>selectBoard(b)} className={`w-full text-left rounded-xl border p-3 ${selectedBoard?.code===b.code?"bg-slate-900 text-white border-slate-900":"bg-white border-slate-200 hover:bg-slate-100"}`}>
+                <div className="flex justify-between gap-2">
+                  <span className="font-semibold">{b.name}</span>
+                  <span className={Number(b.pct)>=0?"text-rose-500":"text-emerald-500"}>{f(b.pct)}%</span>
+                </div>
+                <div className="mt-1 text-xs opacity-70">成交 {money(b.amount)} · {b.code}</div>
+              </button>)}
+            </div>
+          </div>
+
+          <div className="xl:col-span-2 space-y-4">
+            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-2xl font-bold">{selectedBoard?.name || "请选择板块"}</h3>
+                  <p className="mt-2 text-sm text-slate-600">成分股数量：{boardStocks.length}。此处统计的是所选板块成分股，不是预设代表股。</p>
+                </div>
+                <Badge tone={boardStats.score>=80?"green":boardStats.score>=65?"blue":boardStats.score>=50?"amber":"red"}>强度 {Math.round(boardStats.score||0)}</Badge>
+              </div>
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                <div className="rounded-xl bg-white p-3 border border-slate-200">平均涨幅<br/><b>{f(boardStats.avgPct)}%</b></div>
+                <div className="rounded-xl bg-white p-3 border border-slate-200">上涨占比<br/><b>{f((boardStats.upRatio||0)*100,0)}%</b></div>
+                <div className="rounded-xl bg-white p-3 border border-slate-200">涨停数<br/><b>{boardStats.limitCount}</b></div>
+                <div className="rounded-xl bg-white p-3 border border-slate-200">强势数<br/><b>{boardStats.strongCount}</b></div>
+                <div className="rounded-xl bg-white p-3 border border-slate-200">成交额<br/><b>{money(boardStats.amount)}</b></div>
+              </div>
+              <div className="mt-4 rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800">
+                走势判断：{boardStats.score>=80?"板块强度较高，次日仍可看延续，但追高风险增加，重点看分歧承接。":boardStats.score>=65?"板块有轮动机会，观察前排是否继续强。":boardStats.score>=50?"板块一般，只看局部修复。":"板块偏弱，暂不作为主攻方向。"}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                <h3 className="font-bold">成分股涨幅前列</h3>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-slate-500 border-b"><th className="py-2 pr-3">股票</th><th className="py-2 pr-3">涨幅</th><th className="py-2 pr-3">换手</th><th className="py-2 pr-3">成交</th></tr></thead>
+                    <tbody>{boardTopStocks.map(x=><tr key={x.code} className="border-b last:border-0">
+                      <td className="py-2 pr-3 font-semibold">{x.name}</td>
+                      <td className={`py-2 pr-3 font-bold ${Number(x.pct)>=0?"text-rose-600":"text-emerald-600"}`}>{f(x.pct)}%</td>
+                      <td className="py-2 pr-3">{f(x.turnover)}%</td>
+                      <td className="py-2 pr-3">{money(x.amount)}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                <h3 className="font-bold">板块内短线候选</h3>
+                <div className="mt-3 space-y-2">
+                  {boardRecommend.map(x=><div key={x.code} className="rounded-xl bg-white border border-slate-200 p-3">
+                    <div className="flex justify-between gap-2">
+                      <div className="font-semibold">{x.name} <span className="text-slate-400">{x.code}</span></div>
+                      <Badge tone={x.boardRecScore>=80?"green":x.boardRecScore>=68?"blue":"amber"}>{Math.round(x.boardRecScore)}</Badge>
+                    </div>
+                    <div className="mt-2 grid grid-cols-4 gap-2 text-xs text-slate-600">
+                      <span>现价 {f(x.price)}</span><span>涨幅 {f(x.pct)}%</span><span>换手 {f(x.turnover)}%</span><span>成交 {money(x.amount)}</span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500">看点：非弱势、非已涨停优先；盘中仍需看分时承接和板块前排。</div>
+                  </div>)}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -247,15 +412,15 @@ export default function App(){
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
               <div>平均涨幅 <b>{f(s.avgPct)}%</b></div>
-              <div>上涨占比 <b>{f(s.upRatio*100,0)}%</b></div>
-              <div>涨停数 <b>{s.limitCount}</b></div>
+              <div>样本上涨占比 <b>{f(s.upRatio*100,0)}%</b></div>
+              <div>样本涨停数 <b>{s.limitCount}</b></div>
               <div>强势数 <b>{s.strongCount}</b></div>
               <div className="col-span-2">成交额 <b>{money(s.amount)}</b></div>
             </div>
-            <div className="mt-4"><ScoreBar label="板块评分" value={s.score}/></div>
+            <div className="mt-4"><ScoreBar label="样本板块评分" value={s.score}/></div>
             <p className="mt-3 text-sm text-slate-700">{s.logic}</p>
             <div className="mt-3 rounded-xl bg-white border border-slate-200 p-3 text-sm">
-              <b>预测：</b>{s.score>=80?"主线仍有延续，但追高风险增加，等分歧承接。":s.score>=65?"有轮动机会，观察前排是否继续强。":s.score>=50?"只看修复，不做主攻。":"暂时回避。"}
+              <b>预测：</b>{s.score>=80?"样本主线仍有延续，但追高风险增加，等分歧承接。":s.score>=65?"有轮动机会，观察前排是否继续强。":s.score>=50?"只看修复，不做主攻。":"暂时回避。"}
             </div>
           </div>)}
         </div>
@@ -263,7 +428,7 @@ export default function App(){
 
       <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
         <div className="flex items-center gap-2 text-slate-500 text-sm"><Zap size={16}/> 新增：短期看好个股推荐</div>
-        <h2 className="mt-1 text-2xl font-bold">基于板块强度、涨幅、换手、成交额、价格和涨停风险自动筛选</h2>
+        <h2 className="mt-1 text-2xl font-bold">基于代表股板块强度、涨幅、换手、成交额、价格和涨停风险自动筛选</h2>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {recommendations.map(x=><div key={x.code} className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
             <div className="flex justify-between gap-3">
@@ -329,7 +494,18 @@ export default function App(){
         </table></div>
       </section>
 
-      <section className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 flex gap-2">
+      
+      <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-slate-500 text-sm"><AlertTriangle size={16}/> 统计口径说明</div>
+        <h2 className="mt-1 text-xl font-bold">为什么不再写“绝对板块涨停数”</h2>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3"><b>板块强度</b><br/>基于预设代表股池计算，不等于交易软件里的完整概念板块。</div>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3"><b>样本涨停数</b><br/>已区分主板10cm、创业板/科创板20cm、ST约5cm，但只统计样本内股票。</div>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3"><b>主线判断</b><br/>如果前两名分数接近，会提示“多主线轮动”，避免误判唯一主线。</div>
+        </div>
+      </section>
+
+<section className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 flex gap-2">
         <ShieldAlert size={18} className="shrink-0 mt-0.5"/><p>提醒：这是规则模型，支撑位和推荐只是辅助决策，不保证涨跌。抓涨停必须结合竞价、盘口、板块前排、分时承接和封单质量。</p>
       </section>
     </div>
